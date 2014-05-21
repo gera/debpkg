@@ -41,7 +41,9 @@
 #               Specifying REVISION without specifying VERSION is an error.
 # SRCFILE       the source filename. Defaults to `NAME-VERSION.tar.gz`. Used
 #               when DOWNLOAD_URL is set.
-# DOWNLOAD_URL  if set, the SRCFILE is downloaded.
+# DOWNLOAD_URL  if set, the SRCFILE is downloaded. If BUILDSTYLE is `python`,
+#               defaults to the PyPi URL for the given package name (NAME) and
+#               version.
 # GIT_URL       if set, a git-clone of it is expected to produce the SRCDIR.
 #               conflicts with SRCFILE and DOWNLOAD_URL.
 # GIT_BUILD_TAG if set, this tag is checked out before building. only valid
@@ -153,6 +155,15 @@ CHANGESFILE=$(CHANGESNAME)_$(VERSION)_$(ARCH).changes
 endif
 endif
 
+# DOWNLOAD_URL: use specified, defaulting to PyPi for python builds
+ifdef DOWNLOAD_URL
+SPECIFIED_DOWNLOAD_URL=yes
+else
+ifeq ($(BUILDSTYLE),python)
+DOWNLOAD_URL=https://pypi.python.org/packages/source/$(shell echo $(NAME) | head -c 1)/$(NAME)/$(NAME)-$(VERSION).tar.gz
+endif
+endif
+
 # SRCFILE: the source (tarball), with a sane default
 ifdef SRCFILE
 SIGNIFICANT_SRCFILE=yes
@@ -205,7 +216,7 @@ endif
 
 # if GIT_URL is set, make sure SRCFILE and DOWNLOAD_URL are unset
 ifdef GIT_URL
-ifdef DOWNLOAD_URL
+ifdef SPECIFIED_DOWNLOAD_URL
 $(error "GIT_URL conflicts with DOWNLOAD_URL")
 endif
 ifdef SRCFILE
