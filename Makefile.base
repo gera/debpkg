@@ -275,7 +275,7 @@ ifeq ($(findstring $(DEBFILE),$(OVERRIDES)),)
 # SRCFILE as well.
 $(DEBFILE): $(if $(SIGNIFICANT_SRCFILE),$(SRCFILE)) $(SRCDIR)
 	cd '$(SRCDIR)' && $(BUILDCMD)
-	touch -c '$(DEBFILE)'
+	dpkg -I '$(DEBFILE)' >/dev/null && touch -c '$(DEBFILE)'
 endif
 
 # it makes no sense to silently allow overriding the sign and publish targets
