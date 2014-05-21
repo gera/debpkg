@@ -1,0 +1,346 @@
+
+# The debpkg repo base makefile, providing several useful targets (all, sign,
+# publish, clean, distclean) which are easily customizable with useful
+# defaults.
+#
+# Package specific makefiles should declare the variables at the top and then
+# include this Makefile immediately afterwards. For example:
+#
+# --------------------
+# NAME=FOO
+# VERSION=1.2
+# ARCH=amd64
+# REVISION=3~bar.1
+#
+# include ../Makefile.base
+#
+# other_specific_target:
+# 		do_something
+# --------------------
+#
+# A package specific Makefile is expected to provide the following variables:
+# NAME          the package name, required.
+# DEBNAME       the base name (without version info) for the .deb file,
+#               defaults to NAME (or python-NAME if BUILDSTYLE is `python`).
+# DEBFILE       the full name of the .deb file to expect. Defaults to
+#               `DEBNAME_VERSION-REVISION_ARCH.deb` if REVISION is defined,
+#               else `DEBNAME_VERSION_ARCH.deb`
+# CHANGESNAME   the base name (without version info) for the .changes file,
+#               defaults to DEBNAME
+# CHANGESFILE   the full name of the .changes fileto expect. Defaults to
+#               `CHANGESNAME_VERSION-REVISION_ARCH.changes` if REVISION is
+#               defined, else `DEBNAME_VERSION_ARCH.changes`
+# VERSION       package version. May be skipped if all derived values are
+#               supplied. If BUILDSTYLE is `deb`, then is parsed from the
+#               `debian/changelog` file if one exists.
+# ARCH          package arch. May be skipped if all derived values are
+#               supplied.
+# REVISION      (Debian) revision for the package. May be skipped if all
+#               derived values are supplied. Is parsed from `debian/changelog`
+#               if VERSION is unspecified, and if BUILDSTYLE is `deb`.
+#               Specifying REVISION without specifying VERSION is an error.
+# SRCFILE       the source filename. Required, if DOWNLOAD_URL is set.
+# DOWNLOAD_URL  if set, the SRCFILE is downloaded. Makes SRCFILE mandatory.
+# GIT_URL       if set, a git-clone of it is expected to produce the SRCDIR.
+#               conflicts with SRCFILE and DOWNLOAD_URL.
+# GIT_BUILD_TAG if set, this tag is checked out before building. only valid
+#               if GIT_URL is set and SRCDIR target is NOT overridden.
+# UNPACKCMD     the command used to unpack SRCFILE. Should create SRCDIR.
+#               Optional unless DOWNLOAD_URL is set. Defaults to `tar zxvf`
+# SRCDIR        the directory to build in. If DOWNLOAD_URL is set
+#               (SRCFILE/UNPACKCMD are used), should be created by UNPACKCMD.
+#               This is used as a target which the build depens on and *must*
+#               be supplied by the package-specific Makefile if DOWNLOAD_URL
+#               is not set, with the target setting it up ready for building.
+#               Defaults to `NAME-VERSION`.
+# BUILDSTYLE    sets a sane BUILDCMD. Valid values are `deb` and `python`.
+#               Defaults to `deb`.
+# BUILDCMD      used to build the package. Defaults to `dpkg-buildpackage
+#               -I.svn -rfakeroot -uc -b -us`
+# OVERRIDES     the target names which are overridden in the package-specific
+#               Makefile, to be set to avoid the make warnings
+#
+
+.PHONY: _sign
+
+# This is a bit tricky (meta-Make)
+# Make doesn't support logical combination operations (specifically AND) with
+# the define/endif directives, so we either write a bunch of nested defines,
+# or create a definition which when called with an arg, returns Make syntax
+# do do what we want (check for the variable) and eval it.
+# This, then can be looped over as well.
+# So, instead of writing
+#   ifdef FOO
+#   $(error "FOO is not defined")
+#   endif
+#   ifdef BAR
+#   $(error "BAR is not defined")
+#   endif
+#   ...
+#
+# we can simply write
+#   $(foreach varname,FOO BAR ...,$(eval $(call ENSUREVAR,$(varname))))
+define ENSUREVAR
+$(1)_FAIL:=$$(shell test -n "$$($1)" || echo 1)
+$$(if $$($(1)_FAIL),$$(error "$(1) is not defined"))
+endef
+
+# more trickery (meta-meta-Make)
+# Now, instead of writing out the long $(foreach ...) form, why not go turtles
+# all the way and create a function which makes this form and evaluates
+# *that*
+define ENSUREALL
+$(eval $$(foreach varname,$(1),$$(eval $$(call ENSUREVAR,$$(varname)))))
+endef
+
+# NAME: name of the package - MUST be defined (no default)
+$(eval $(call ENSUREVAR,NAME))
+
+# BUILDSTYLE: used to determine BUILDCMD and other things
+ifndef BUILDSTYLE
+BUILDSTYLE=deb
+endif
+
+ifndef DEBNAME
+ifeq ($(BUILDSTYLE),python)
+DEBNAME=python-$(NAME)
+else
+DEBNAME=$(NAME)
+endif
+endif
+
+# VERSION/REVISION: parse from `debian/changelog` if unspecified
+ifndef VERSION
+ifeq ($(BUILDSTYLE),deb)
+ifneq ($(wildcard debian/changelog),)
+# dpkg-parsechangelog looks at `debian/changelog` by default
+RAWVERSION=$(subst -, ,$(shell dpkg-parsechangelog | grep '^Version:' | cut -d' ' -f2))
+# to convert spaces back to hyphens, we need to pass the space to subst
+space := $(eval) $(eval)
+VERSION=$(subst $(space),-,$(filter-out $(lastword $(RAWVERSION)),$(RAWVERSION)))
+ifdef REVISION
+$(error "REVISION specified with auto parsed VERSION")
+endif
+RAWREVISION=$(lastword $(RAWVERSION))
+ifneq ($(RAWREVISION),)
+REVISION=$(RAWREVISION)
+endif
+endif
+endif
+endif
+
+# DEBFILE: the name of the final .deb with a sane default
+ifndef DEBFILE
+$(call ENSUREALL,VERSION ARCH)
+ifdef REVISION
+DEBFILE=$(DEBNAME)_$(VERSION)-$(REVISION)_$(ARCH).deb
+else
+DEBFILE=$(DEBNAME)_$(VERSION)_$(ARCH).deb
+endif
+endif
+
+# CHANGESFILE: the name of the final .changes file with a sane default
+ifndef CHANGESFILE
+ifndef CHANGESNAME
+CHANGESNAME=$(DEBNAME)
+endif
+$(call ENSUREALL,VERSION ARCH)
+ifdef REVISION
+CHANGESFILE=$(CHANGESNAME)_$(VERSION)-$(REVISION)_$(ARCH).changes
+else
+CHANGESFILE=$(CHANGESNAME)_$(VERSION)_$(ARCH).changes
+endif
+endif
+
+# SRCFILE: the source (tarball), with a sane default
+ifdef SRCFILE
+SIGNIFICANT_SRCFILE=yes
+else
+ifdef DOWNLOAD_URL
+SIGNIFICANT_SRCFILE=yes
+endif
+# only set up a default for SRCFILE if GIT_URL is unset
+ifndef GIT_URL
+$(call ENSUREALL,NAME VERSION)
+SRCFILE=$(NAME)-$(VERSION).tar.gz
+endif
+endif
+
+# SRCDIR: what the SRCFILE unpacks to, with a sane default
+ifndef SRCDIR
+$(call ENSUREALL,NAME VERSION)
+SRCDIR=$(NAME)-$(VERSION)
+endif
+
+# UNPACKCMD: used to unpack the SRCFILE, with a sane default
+ifndef UNPACKCMD
+UNPACKCMD=tar zxvf
+endif
+
+# T13961 - we need to pass `-A` instead of `-b` to `dpkg-buildpackage`
+# if the ARCH is `all`
+ifeq ($(ARCH),all)
+DPKG_BUILDPKG_ARGS= -I.svn -rfakeroot -uc -A -us
+else
+DPKG_BUILDPKG_ARGS= -I.svn -rfakeroot -uc -b -us
+endif
+
+# BUILDCMD: the command to execute in SRCDIR to generate DEBFILE
+# defaults to dpkg-buildpackage
+ifndef BUILDCMD
+ifeq ($(BUILDSTYLE),deb)
+BUILDCMD=dpkg-buildpackage $(DPKG_BUILDPKG_ARGS)
+else
+ifeq ($(BUILDSTYLE),python)
+BUILDCMD=echo "[DEFAULT]" > stdeb.cfg && echo "Package: $(DEBNAME)" >> stdeb.cfg && \
+		 python setup.py --command-packages=stdeb.command bdist_deb && \
+		 cp 'deb_dist/$(DEBFILE)' ../ && \
+		 '$(RELATIVE_BASE_PATH)../generate_changes.py' '../$(DEBFILE)' '$(DISTRIBUTION)' > '../$(CHANGESFILE)'
+else
+$(error "unrecognized value for BUILDSTYLE")
+endif
+endif
+endif
+
+# if GIT_URL is set, make sure SRCFILE and DOWNLOAD_URL are unset
+ifdef GIT_URL
+ifdef DOWNLOAD_URL
+$(error "GIT_URL conflicts with DOWNLOAD_URL")
+endif
+ifdef SRCFILE
+$(error "GIT_URL conflicts with SRCFILE")
+endif
+endif
+
+# some variables we need to deal with package signing
+CHANGESPATH=$(CURDIR)/$(CHANGESFILE)
+IS_MAKE_INTERACTIVE:=$(shell [ -t 0 ] && echo 1)
+FQDN=$(shell hostname -f)
+# the relative path to the directory containing this makefile (Makefile.base)
+RELATIVE_BASE_PATH=$(subst Makefile.base,,$(filter %/Makefile.base,$(MAKEFILE_LIST)))
+
+all: $(DEBFILE)
+
+# after we've set our first target, which is the default for Make,
+# include the variables
+include $(RELATIVE_BASE_PATH)Makefile.vars
+
+# If DOWNLOAD_URL is not set, we skip the SRCFILE target altogether
+ifneq ($(DOWNLOAD_URL),)
+$(SRCFILE):
+	wget '$(DOWNLOAD_URL)'
+
+# if DOWNLOAD_URL isn't set, providing the SRCDIR target is the responsibilty
+# of the specific Makefile
+# Otherwise, allow it to be overridden
+ifeq ($(findstring $(SRCDIR),$(OVERRIDES)),)
+$(SRCDIR): $(SRCFILE)
+	$(UNPACKCMD) '$(SRCFILE)'
+ifeq ($(BUILDSTYLE),deb)
+	test -d debian && cp -a debian '$(SRCDIR)' || true
+endif
+endif
+endif
+
+# if GIT_URL is set, SRCDIR is the result of a git clone
+ifneq ($(GIT_URL),)
+ifeq ($(findstring $(SRCDIR),$(OVERRIDES)),)
+$(SRCDIR):
+	test -d '$(SRCDIR)' || git clone '$(GIT_URL)'
+ifeq ($(GIT_BUILD_TAG),)
+	cd '$(SRCDIR)' && git clean -fd && git pull
+else
+	cd '$(SRCDIR)' && git clean -fd && git pull && git reset --hard '$(GIT_BUILD_TAG)'
+endif
+ifeq ($(BUILDSTYLE),deb)
+	test -d debian && cp -a debian '$(SRCDIR)' || true
+endif
+endif
+endif
+
+ifeq ($(findstring $(DEBFILE),$(OVERRIDES)),)
+# if DOWNLOAD_URL is set or an expplicit SRCFILE was specied, depend on the
+# SRCFILE as well.
+$(DEBFILE): $(if $(SIGNIFICANT_SRCFILE),$(SRCFILE)) $(SRCDIR)
+	cd '$(SRCDIR)' && $(BUILDCMD)
+	touch -c '$(DEBFILE)'
+endif
+
+# it makes no sense to silently allow overriding the sign and publish targets
+# (for now at least), so we don't check the OVERRIDES variable for them.
+_sign: $(DEBFILE)
+ifdef IS_MAKE_INTERACTIVE
+	@if [ ! -f "$(CHANGESPATH)" ]; then echo "no changes file ($(CHANGESFILE)) found!"; exit 1; fi
+	@if [ ! -x /usr/bin/sponge ]; then echo "this requires 'sponge' (from moreutils)."; exit 1; fi
+	@until grep 'SIGNED MESSAGE-----' '$(CHANGESPATH)' >/dev/null; do\
+		perl -pi -e 's/Distribution: .*/Distribution: $(PUBLISH_DISTRO)/' '$(CHANGESFILE)' ; \
+		echo ; \
+		echo ; \
+		echo "  The changes file is not signed."; \
+		echo "  You need to perform this package signing step to continue."; \
+		echo "  paste the following command in another terminal on your"; \
+		echo "  *LOCAL* machine (the one with your @$(PKGVAR_SIGNING_DOMAIN) gpg-key)"; \
+		echo "  and it should do the rest. It might ask you for your key"; \
+		echo "  passphrase(s) depending on your configuration."; \
+		echo ; \
+		echo "    ssh '$(FQDN)' cat '$(CHANGESPATH)' | gpg --default-key @$(PKGVAR_SIGNING_DOMAIN) --output - --clearsign - | ssh '$(FQDN)' sponge '$(CHANGESPATH)'"; \
+		echo ; \
+		echo "waiting for package signing. Press enter when done."; \
+		read response; \
+	done
+else
+	$(error "unable to sign packages while running non-interactively")
+endif
+
+# More trickery: We would like to specify the distribution to publish to, as
+# in:
+# 		$ make publish squeeze
+#
+# But make would interpret `squeeze` as a target as well. So, we define phony
+# targets if the first target is `publish`
+ifeq (publish,$(firstword $(MAKECMDGOALS)))
+PUBLISH_DISTRO:=$(word 2,$(MAKECMDGOALS))
+ifeq ($(PUBLISH_DISTRO),)
+PUBLISH_DISTRO:=$(PKGVAR_DEFAULT_PUBLISH_DISTRO)
+endif
+$(eval $(PUBLISH_DISTRO):;@:)
+endif
+
+# Make the publish target depend on the _sign target only if the
+# PKGVAR_REQUIRE_SIGNING has been set
+ifneq ($(PKGVAR_REQUIRE_SIGNING),)
+MAYBE_SIGN=_sign
+else
+MAYBE_SIGN=
+endif
+
+publish: $(DEBFILE) $(MAYBE_SIGN)
+	scp *.changes *.deb '$(PKGVAR_PUBLISH_HOST):$(PKGVAR_PUBLISH_PATH)'
+
+
+# if GIT_URL is set, a clean target shouldn't remove the checkout
+ifeq ($(findstring clean,$(OVERRIDES)),)
+clean:
+ifneq ($(GIT_URL),)
+ifeq ($(GIT_BUILD_TAG),)
+	test -d '$(SRCDIR)' || exit 0 && cd '$(SRCDIR)' && test -d .git || exit 0 && git clean -fd
+else
+	test -d '$(SRCDIR)' || exit 0 && cd '$(SRCDIR)' && test -d .git || exit 0 && git clean -fd && git reset --hard '$(GIT_BUILD_TAG)'
+endif
+else
+	rm -rf '$(SRCDIR)'
+endif
+	rm -f *.changes *.deb *.dsc
+endif
+
+ifeq ($(findstring distclean,$(OVERRIDES)),)
+distclean: clean
+ifneq ($(SIGNIFICANT_SRCFILE),)
+	rm -f '$(SRCFILE)'
+endif
+# we shouldn't remove SRCDIR if SRCDIR was overridden
+ifeq ($(findstring $(SRCDIR),$(OVERRIDES)),)
+	rm -rf '$(SRCDIR)'
+endif
+endif
+

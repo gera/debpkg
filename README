@@ -1,0 +1,111 @@
+= Build environments
+
+Packages should be built in clean environments so that they don't pick up and
+depend upon optional libraries or dependencies present on the build host.
+
+Ideally, every package should be built in a fresh clean environment which is
+discarded after the build. Since these packages are built for internal
+distribution only, and all we care about is build reproducability, we can get
+away with building them in a single chroot (per target distribution).
+
+The build environments are set up via `setup.sh`, which is idempotent and may
+be invoked multiple times to ensure that the build envs have been set up
+correctly.
+
+Note that this means that all installed packages in the chroot must be
+reflected in the `setup.sh` script.
+
+== Setup
+
+Edit the variables in `Makefile.vars` to reflect your setup. This involves
+setting your email domain name (if using signing) and the debian repo
+hostname, among other things.
+
+Run `setup.sh` to set up a build environment via `schroot`. Note that we don't
+use pbuilder/cowbuilder etc to do real clean builds. This isn't really
+required, as long as our builds are reproducible from within the schroot that
+we set up.
+
+
+== Using the build environments
+
+These build environments are accessible via `schroot`.
+
+For example, to enter the `wheezy-builds` chroot:
+
+```
+user@host:~$ test -f /etc/default/proxy && source /etc/default/proxy
+user@host:~$ schroot -c wheezy-builds -p
+(wheezy-builds)user@host:~$ # cd debpkg/net-snmp; make; etc;
+(wheezy-builds)user@host:~$ # exiting the clean environment
+(wheezy-builds)user@host:~$ exit
+user@host:~$
+```
+
+To log in as `root` (for installing additional packages in the build
+environment for example):
+
+```
+user@host:~$ test -f /etc/default/proxy && source /etc/default/proxy  # sets up proxy env vars
+user@host:~$ schroot -c wheezy-builds -p -u root
+(wheezy-builds)root@host:~# # apt-get install whatever or apt-get build-dep whatever
+(wheezy-builds)root@host:~# exit
+user@host:~$
+```
+
+== Building packages
+
+# Clone this repo and change to that directory.
+# Make sure the build environment is set up, via `sudo ./setup.sh`. Note that
+  this step is only required once on a host. However, it is idempotent and
+  may be invoked multiple times.
+# Enter the build environment chroot, via `schroot -c targetdistro-builds -p`.
+# Build a package (the exact steps depend on the specific package, but
+  usually a `make` in the package directory is sufficient).
+# (optionally) publish the package
+# Exit the build environment (via `exit`, or control+D).
+
+== Publishing arbitrary debs
+
+Do you have a .deb file downloaded from a third party, and you want to 
+put it into the repo?  First, ensure that your deb is named like this:
+
+`<package name>_<version>_<arch>.deb`
+
+Otherwise the repository might silently ignore it.
+
+Make sure to set up your gpg key (and ensure that pakages signed with your key
+are actually accepted). After that, in this repo, run:
+
+`make deb-publish <your_deb_file_name>.deb <your_repo_name>`
+
+(eg, `make deb-publish foo_1.0-1_all.deb wheezy`)
+
+== Creating package specific Makefiles
+
+To set up a package build vis this repo, create a directory for the package
+and a 'package-specific' Makefile.
+
+The details and complexity would depend on the package being built, but there
+are a few things that a package specific Makefile MUST supply. It then
+includes the `Makefile.base` for a lot of the common stuff.
+
+All configurable variables and overridable targets are documented in
+`Makefile.base`.
+
+This, for example, is the Makefile sufficient to build the `python-urllib3`
+package:
+
+```
+NAME=urllib3
+VERSION=1.8.2
+REVISION=1
+ARCH=all
+DOWNLOAD_URL=https://pypi.python.org/packages/source/$(shell echo $(NAME) | head -c 1)/$(NAME)/$(SRCFILE)
+BUILDSTYLE=python
+
+include ../Makefile.base
+```
+
+Which also provides make targets for signing and publishing the package.
+
