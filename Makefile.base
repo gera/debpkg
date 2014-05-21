@@ -39,8 +39,9 @@
 #               derived values are supplied. Is parsed from `debian/changelog`
 #               if VERSION is unspecified, and if BUILDSTYLE is `deb`.
 #               Specifying REVISION without specifying VERSION is an error.
-# SRCFILE       the source filename. Required, if DOWNLOAD_URL is set.
-# DOWNLOAD_URL  if set, the SRCFILE is downloaded. Makes SRCFILE mandatory.
+# SRCFILE       the source filename. Defaults to `NAME-VERSION.tar.gz`. Used
+#               when DOWNLOAD_URL is set.
+# DOWNLOAD_URL  if set, the SRCFILE is downloaded.
 # GIT_URL       if set, a git-clone of it is expected to produce the SRCDIR.
 #               conflicts with SRCFILE and DOWNLOAD_URL.
 # GIT_BUILD_TAG if set, this tag is checked out before building. only valid
