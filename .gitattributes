@@ -1,0 +1,17 @@
+# Default behaviour
+* text=auto
+
+# Known text files
+*.py text
+*.c text
+*.cpp text
+*.js text
+*.pp text
+*.erb text
+*.conf text
+
+# Known binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
