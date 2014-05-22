@@ -271,11 +271,19 @@ endif
 endif
 
 ifeq ($(findstring $(DEBFILE),$(OVERRIDES)),)
+CURRENT_ARCH=$(shell dpkg-architecture | grep DEB_HOST_ARCH= | cut -f2 -d=)
 # if DOWNLOAD_URL is set or an expplicit SRCFILE was specied, depend on the
 # SRCFILE as well.
 $(DEBFILE): $(if $(SIGNIFICANT_SRCFILE),$(SRCFILE)) $(SRCDIR)
 	cd '$(SRCDIR)' && $(BUILDCMD)
 	dpkg -I '$(DEBFILE)' >/dev/null && touch -c '$(DEBFILE)'
+ifeq ($(ARCH),all)
+ifeq ($(BUILDSTYLE),deb)
+ifneq ($(PKGVAR_DPKG_CHANGESFIX),)
+	test -f '$(CHANGESFILE)' || mv $(subst _all.changes,_$(CURRENT_ARCH).changes,$(CHANGESFILE)) $(CHANGESFILE)
+endif
+endif
+endif
 endif
 
 # it makes no sense to silently allow overriding the sign and publish targets
