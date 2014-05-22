@@ -117,16 +117,16 @@ ifndef VERSION
 ifeq ($(BUILDSTYLE),deb)
 ifneq ($(wildcard debian/changelog),)
 # dpkg-parsechangelog looks at `debian/changelog` by default
-RAWVERSION=$(subst -, ,$(shell dpkg-parsechangelog | grep '^Version:' | cut -d' ' -f2))
+RAWVERSION:=$(subst -, ,$(shell dpkg-parsechangelog | grep '^Version:' | cut -d' ' -f2))
 # to convert spaces back to hyphens, we need to pass the space to subst
 space := $(eval) $(eval)
-VERSION=$(subst $(space),-,$(filter-out $(lastword $(RAWVERSION)),$(RAWVERSION)))
+VERSION:=$(subst $(space),-,$(filter-out $(lastword $(RAWVERSION)),$(RAWVERSION)))
 ifdef REVISION
 $(error "REVISION specified with auto parsed VERSION")
 endif
-RAWREVISION=$(lastword $(RAWVERSION))
+RAWREVISION:=$(lastword $(RAWVERSION))
 ifneq ($(RAWREVISION),)
-REVISION=$(RAWREVISION)
+REVISION:=$(RAWREVISION)
 endif
 endif
 endif
