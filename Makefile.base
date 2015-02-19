@@ -245,8 +245,11 @@ include $(RELATIVE_BASE_PATH)Makefile.vars
 
 # If DOWNLOAD_URL is not set, we skip the SRCFILE target altogether
 ifneq ($(DOWNLOAD_URL),)
+# also, allow it to be overridden
+ifeq ($(findstring $(SRCFILE),$(OVERRIDES)),)
 $(SRCFILE):
 	$(EXPORTENV) wget '$(DOWNLOAD_URL)'
+endif
 
 # if DOWNLOAD_URL isn't set, providing the SRCDIR target is the responsibilty
 # of the specific Makefile
