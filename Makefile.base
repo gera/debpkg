@@ -62,7 +62,7 @@
 #               -I.svn -rfakeroot -uc -b -us`
 # OVERRIDES     the target names which are overridden in the package-specific
 #               Makefile, to be set to avoid the make warnings
-#
+# ENV			Environment string prefixed to all commands
 
 .PHONY: _sign
 
@@ -110,6 +110,12 @@ DEBNAME=python-$(NAME)
 else
 DEBNAME=$(NAME)
 endif
+endif
+
+ifneq ($(ENV),)
+EXPORTENV=export $(ENV) ;
+else
+EXPORTENV:=
 endif
 
 # VERSION/REVISION: parse from `debian/changelog` if unspecified
@@ -240,14 +246,14 @@ include $(RELATIVE_BASE_PATH)Makefile.vars
 # If DOWNLOAD_URL is not set, we skip the SRCFILE target altogether
 ifneq ($(DOWNLOAD_URL),)
 $(SRCFILE):
-	wget '$(DOWNLOAD_URL)'
+	$(EXPORTENV) wget '$(DOWNLOAD_URL)'
 
 # if DOWNLOAD_URL isn't set, providing the SRCDIR target is the responsibilty
 # of the specific Makefile
 # Otherwise, allow it to be overridden
 ifeq ($(findstring $(SRCDIR),$(OVERRIDES)),)
 $(SRCDIR): $(SRCFILE)
-	$(UNPACKCMD) '$(SRCFILE)'
+	$(EXPORTENV) $(UNPACKCMD) '$(SRCFILE)'
 endif
 endif
 
@@ -255,11 +261,11 @@ endif
 ifneq ($(GIT_URL),)
 ifeq ($(findstring $(SRCDIR),$(OVERRIDES)),)
 $(SRCDIR):
-	test -d '$(SRCDIR)' || git clone '$(GIT_URL)'
+	$(EXPORTENV) test -d '$(SRCDIR)' || git clone '$(GIT_URL)'
 ifeq ($(GIT_BUILD_TAG),)
-	cd '$(SRCDIR)' && git clean -fd && git pull
+	$(EXPORTENV) cd '$(SRCDIR)' && git clean -fd && git pull
 else
-	cd '$(SRCDIR)' && git clean -fd && git pull && git reset --hard '$(GIT_BUILD_TAG)'
+	$(EXPORTENV) cd '$(SRCDIR)' && git clean -fd && git pull && git reset --hard '$(GIT_BUILD_TAG)'
 endif
 endif
 endif
@@ -270,14 +276,14 @@ CURRENT_ARCH=$(shell dpkg-architecture | grep DEB_HOST_ARCH= | cut -f2 -d=)
 # SRCFILE as well.
 $(DEBFILE): $(if $(SIGNIFICANT_SRCFILE),$(SRCFILE)) $(SRCDIR)
 ifeq ($(BUILDSTYLE),deb)
-	test -d debian && cp -a debian '$(SRCDIR)' || true
+	$(EXPORTENV) test -d debian && cp -a debian '$(SRCDIR)' || true
 endif
-	cd '$(SRCDIR)' && $(BUILDCMD)
-	dpkg -I '$(DEBFILE)' >/dev/null && touch -c '$(DEBFILE)'
+	$(EXPORTENV) cd '$(SRCDIR)' && $(BUILDCMD)
+	$(EXPORTENV) dpkg -I '$(DEBFILE)' >/dev/null && touch -c '$(DEBFILE)'
 ifeq ($(ARCH),all)
 ifeq ($(BUILDSTYLE),deb)
 ifneq ($(PKGVAR_DPKG_CHANGESFIX),)
-	test -f '$(CHANGESFILE)' || mv $(subst _all.changes,_$(CURRENT_ARCH).changes,$(CHANGESFILE)) $(CHANGESFILE)
+	$(EXPORTENV) test -f '$(CHANGESFILE)' || mv $(subst _all.changes,_$(CURRENT_ARCH).changes,$(CHANGESFILE)) $(CHANGESFILE)
 endif
 endif
 endif
@@ -340,9 +346,9 @@ ifeq ($(findstring clean,$(OVERRIDES)),)
 clean:
 ifneq ($(GIT_URL),)
 ifeq ($(GIT_BUILD_TAG),)
-	test -d '$(SRCDIR)' || exit 0 && cd '$(SRCDIR)' && test -d .git || exit 0 && git clean -fd
+	$(EXPORTENV) test -d '$(SRCDIR)' || exit 0 && cd '$(SRCDIR)' && test -d .git || exit 0 && git clean -fd
 else
-	test -d '$(SRCDIR)' || exit 0 && cd '$(SRCDIR)' && test -d .git || exit 0 && git clean -fd && git reset --hard '$(GIT_BUILD_TAG)'
+	$(EXPORTENV) test -d '$(SRCDIR)' || exit 0 && cd '$(SRCDIR)' && test -d .git || exit 0 && git clean -fd && git reset --hard '$(GIT_BUILD_TAG)'
 endif
 else
 	rm -rf '$(SRCDIR)'
