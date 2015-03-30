@@ -55,7 +55,8 @@
 #               This is used as a target which the build depens on and *must*
 #               be supplied by the package-specific Makefile if DOWNLOAD_URL
 #               is not set, with the target setting it up ready for building.
-#               Defaults to `NAME-VERSION`.
+#               Defaults to `NAME-VERSION`. If GIT_URL is set, defaults to
+#               `NAME`.
 # BUILDSTYLE    sets a sane BUILDCMD. Valid values are `deb` and `python`.
 #               Defaults to `deb`.
 # BUILDCMD      used to build the package. Defaults to `dpkg-buildpackage
@@ -186,8 +187,12 @@ endif
 
 # SRCDIR: what the SRCFILE unpacks to, with a sane default
 ifndef SRCDIR
+ifdef GIT_URL
+SRCDIR=$(NAME)
+else
 $(call ENSUREALL,NAME VERSION)
 SRCDIR=$(NAME)-$(VERSION)
+endif
 endif
 
 # UNPACKCMD: used to unpack the SRCFILE, with a sane default
